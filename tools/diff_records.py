@@ -31,12 +31,12 @@ from crdis.codec.cs_archive import CSArchiveParser, Record  # noqa: E402
 from crdis.codec.cslibu_aes import decrypt_contents_stream  # noqa: E402
 
 
-def load_records(path: Path) -> list[Record]:
+def load_records(path: Path, *, recurse: bool = True) -> list[Record]:
     if not is_rpt(path):
         raise SystemExit(f"{path}: not an .rpt file")
     body = read_stream(path, "Contents")
     plain = decrypt_contents_stream(body)
-    return CSArchiveParser(plain).parse_all()
+    return CSArchiveParser(plain).parse_all(recurse=recurse)
 
 
 def sig(r: Record) -> tuple[int, int, bytes]:
@@ -133,6 +133,16 @@ def main(argv: list[str] | None = None) -> int:
                     print(fmt_rec(j1 + off, br, "+"))
                     if ar.tag == br.tag:
                         print(diff_bytes(ar.value, br.value))
+                        # Auto-descend: when both sides have a single same-tag
+                        # nested child, diff the child's value and tail too.
+                        if (len(ar.children) == 1 and len(br.children) == 1
+                                and ar.children[0].tag == br.children[0].tag):
+                            ac, bc = ar.children[0], br.children[0]
+                            print(f"    └─ nested tag=0x{ac.tag:04x} value diff:")
+                            print(diff_bytes(ac.value, bc.value))
+                            if ar.tail or br.tail:
+                                print(f"    └─ tail diff ({len(ar.tail)}B vs {len(br.tail)}B):")
+                                print(diff_bytes(ar.tail, br.tail))
             else:
                 for k in range(i1, i2):
                     print(fmt_rec(k, ra[k], "-"))

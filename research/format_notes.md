@@ -879,3 +879,86 @@ paired samples should isolate, one variable at a time:
 5. **Cross-check sample 007's line `right` coordinate.** The current notes
    give 5325 but the file decodes to 5565 — either re-measure in Designer
    or accept the file value.
+
+### Element block has three levels of nesting (2026-05-11, late session)
+
+Once the parser was reworked to model wrapper records as "one nested record +
+raw tail" (see `crdis.codec.cs_archive.Record.tail`), a Line block decoded to a
+**three-level chain**, not two:
+
+```
+0xAA (outer, 94 B value)
+  └─ 0xA9 (inner, 84 B value)        — line geometry container
+       └─ 0x9E (innermost, 68 B value) — element metadata (width + name)
+       └─ tail (8 B) → (right, bottom) endpoint
+  └─ tail (2 B) → constant `00 01`
+```
+
+Same pattern for `0xED` (line-style container):
+
+```
+0xED (130 B value)
+  └─ 0xEC (34 B value)               — line style enum + thickness
+  └─ tail (88 B) → 11× `00 00 00 01 00 00 ff ff` default entries
+```
+
+And `0xFD` (formatting template):
+
+```
+0xFD (165 B value)
+  └─ 0xFC (45 B value)               — default-formatting payload (not decoded)
+  └─ tail (112 B) → 14× `00 00 00 01 00 00 ff ff` default entries
+```
+
+The recurring `00 00 00 01 00 00 ff ff` pattern in both 0xED and 0xFD tails
+strongly suggests this is a **fixed-format default-properties table** shared
+across element kinds, populated by Designer when a new element is dropped in.
+
+### Element name lives in the innermost (0x9E) record
+
+The 0x9E record's value contains the Designer-authored element name as a
+4-byte-BE-length + UTF-8 + NUL Pascal-style string (same convention as 0xC2):
+
+| sample 008 line | 0x9E[20:30] hex                | decoded name |
+|---|---|---|
+| Line#1 | `00 00 00 06 4c 69 6e 65 31 00` | "Line1\0"    |
+| Line#2 | `00 00 00 06 4c 69 6e 65 32 00` | "Line2\0"    |
+
+The leading 4 bytes of 0x9E.value are the element's bounding-box **width**
+(u4 BE, twips): Line#1 = 0x00001194 = 4500 ✓, Line#2 = 0x00000f96 = 3990 ✓
+— matching (right - left) for each.
+
+### Line endpoint location, refined
+
+Earlier I reported "0xAA value offset 88..91 = (right, bottom)". With proper
+recursive parsing that's actually the **tail of the 0xA9 child**, at offsets
+2..6 — i.e. after the inner 0x9E record's 78 bytes (10 B inner header + 68 B
+inner value) and after a 2-byte `00 02` marker. Same bytes, cleaner structural
+description.
+
+### Updated Line element schema summary
+
+| record | tag    | value bytes | nesting + key fields                                         |
+|--------|--------|-------------|--------------------------------------------------------------|
+| 0      | 0xAA   | 94          | wraps 0xA9 + 2-B tail `00 01` (constant)                     |
+| 0.0    | 0xA9   | 84          | wraps 0x9E + 8-B tail = `00 02 <right u2 BE> <bottom u2 BE> 00 00` |
+| 0.0.0  | 0x9E   | 68          | `[0:4]` = width (u4 BE), `[20:24]` = name length (u4 BE), then UTF-8+NUL |
+| 1      | 0xBE   | 4           | `(left u2 BE, top u2 BE)` — element placement                 |
+| 2      | 0xFD   | 165         | wraps 0xFC (45 B not decoded) + 112-B default-table tail     |
+| 3      | 0xED   | 130         | wraps 0xEC (style + thickness) + 88-B default-table tail     |
+| 3.0    | 0xEC   | 34          | byte `[2]` = LineStyle enum, `[18:22]` u4 BE = thickness (twips) |
+| 4      | 0xAB   | 0           | end-of-element terminator (empty)                            |
+
+### Tooling changes (this same session)
+
+- `Record.tail` field added to `cs_archive.py`.
+- `parse_record(recurse=True)` now parses exactly **one** nested record from
+  the value and captures the remainder as `tail`. The previous "parse-as-many-
+  as-fit" approach generated spurious zero-tag children inside trailing data
+  and rejected legitimate single-nested records when trailing data didn't
+  EOF cleanly. The new model matches every nested-record case we have observed.
+- `tools/diff_records.py` auto-descends one level when both sides of a same-
+  tag replacement carry a same-tag single child — inner-field deltas now
+  surface in the diff output directly (no more manual XOR step).
+- `spec/elements/line.ksy` encodes the full Line block — see file for full
+  typed layout including the `line_style` enum.

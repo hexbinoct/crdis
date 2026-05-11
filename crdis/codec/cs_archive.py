@@ -40,6 +40,7 @@ class Record:
     length: int
     value: bytes  # unmasked value bytes (this record's mask state applied)
     children: list["Record"] = field(default_factory=list)
+    tail: bytes = b""  # value bytes after the (single) nested child, if any
     raw_value_offset: int = 0  # for cross-reference back to the source stream
 
 
@@ -108,14 +109,22 @@ class CSArchiveParser:
         )
 
         if recurse and length > 0 and looks_like_nested(value):
+            # Empirical model: a wrapper record contains exactly ONE nested
+            # record at the start of its value, followed by raw tail bytes
+            # (typically a 4-byte-aligned data region). Parse one nested
+            # record and capture the remainder as `tail`. If the single
+            # parse fails or produces an obviously degenerate result, treat
+            # the whole value as raw (no children, no tail).
             sub = CSArchiveParser(value, initial_mask=0, default_section=section)
             try:
-                rec.children = sub.parse_all(recurse=True)
-                # If parse didn't consume everything, drop children — not actually nested.
-                if sub.pos != len(value):
-                    rec.children = []
+                child = sub.parse_record(recurse=True)
+                # Sanity gates: child must have consumed at least its own
+                # header, and its length must fit within the parent's value.
+                if sub.pos > 0 and sub.pos <= len(value):
+                    rec.children = [child]
+                    rec.tail = value[sub.pos:]
             except (EOFError, ValueError):
-                rec.children = []
+                pass
 
         # Undo mask
         if bit_simple:
@@ -160,11 +169,16 @@ def looks_like_nested(value: bytes) -> bool:
 def dump_records(records: list[Record], depth: int = 0, max_show: int = 30) -> None:
     indent = "  " * depth
     for i, r in enumerate(records[:max_show]):
-        kids = f"  [{len(r.children)} children]" if r.children else ""
+        suffix = ""
+        if r.children:
+            suffix += f"  [child + tail({len(r.tail)} B)]"
         print(f"{indent}#{i:3d} tag=0x{r.tag:04x}({r.tag:5d})  sec={r.section:5d}  "
               f"flags=0x{r.flags:02x}  simple={int(r.has_simple_enc)}  len={r.length:6d}  "
-              f"val[:32]={r.value[:32].hex()}{kids}")
+              f"val[:32]={r.value[:32].hex()}{suffix}")
         if r.children:
             dump_records(r.children, depth + 1, max_show=max_show)
+            if r.tail:
+                print(f"{indent}  tail[:32]={r.tail[:32].hex()}"
+                      f"{'...' if len(r.tail) > 32 else ''} ({len(r.tail)} B)")
     if len(records) > max_show:
         print(f"{indent}... ({len(records) - max_show} more)")
