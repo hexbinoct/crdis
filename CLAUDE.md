@@ -56,6 +56,63 @@ samples (see "Next-pass sample requests" at the bottom of
 sections of `research/format_notes.md`, then
 `research/reverse_engineering_journey.md` for narrative.
 
+### ⏸ PAUSED MID-TASK (2026-05-11, late session) — pick up here first
+
+We paused while setting up a proper test suite. Plan was agreed and
+TaskCreate entries were filed in the session task list; the user wants
+all three of these (in order):
+
+1. **Golden-fixture tests over all 8 samples.** Parameterized test that,
+   for each `samples/00*/report.rpt`, asserts:
+   - sha256 of the raw Contents stream
+   - sha256 of the inflated plaintext after `decrypt_contents_stream`
+   - top-level record count
+   - sha256 of the concatenation of every top-level `record.value`
+   The expected hashes are not stored as fixture files; bake them as
+   constants in the test module so a regression in either the AES port
+   or the CSArchive parser fails loudly. Compute the values once with
+   the current (known-good) parser to seed the constants.
+2. **Ground-truth decoder tests.** Convert prose in each sample's
+   `notes.md` into executable assertions:
+   - 002/003/004: extract every 0xC2 record's string and assert it
+     matches the Designer-authored content ("HELLO", "WORLD",
+     "GREETINGS", "SOMEONE"). 0xC2 layout =
+     `<u4 BE length><utf8+NUL><4 pad>`; length includes the NUL.
+   - 007/008: walk each Line block (top-level 0xAA → 0xA9 → 0x9E),
+     pull element name from 0x9E.value[20:], width from 0x9E.value[0:4]
+     (u4 BE), (left, top) from the next 0xBE record, (right, bottom)
+     from 0xA9.tail[2..6], style from 0xEC.value[2], thickness from
+     0xEC.value[18:22] (u4 BE). Assert exactly the values in notes.md
+     (note: sample 007's `right` decodes to 5565 but the notes say
+     5325 — the test should encode the file truth, and a separate
+     comment should flag the notes discrepancy).
+   - 001: assert no element-class records (no 0xA5, 0xAA, 0xAF) — the
+     "empty report has nothing" invariant.
+3. **AES non-FIPS test vector.** Hardcode a single
+   `(key, IV, ciphertext[:32]) -> expected_plaintext[:32]` triple
+   from sample 001. The expected plaintext must start with the zlib
+   magic `78 5e`. Computing the vector: take `body = read_stream(...,
+   "Contents")` of sample 001, derive `iv = body[16:32] XOR 0xff`,
+   `ct = body[34:66]`, run `cfb128_decrypt(expand_key(FIXED_KEY), iv,
+   ct)`, capture the first 32 plaintext bytes, lock them in. This
+   catches anyone accidentally swapping `crdis.codec.cslibu_aes` for
+   `Crypto.Cipher.AES` — exactly the regression the cslibu port
+   guards against.
+
+The existing `tests/test_container.py` only covers samples 001 and 002.
+First step: extend its `SAMPLE_FILES` list to all 8 samples. Pytest is
+already a declared optional dev dep (`pip install -e '.[dev]'`); it just
+needs to actually be installed on this machine — last attempt's tool
+call got interrupted before I could verify.
+
+When done, run `pytest -q tests/` from the repo root, commit + push.
+Estimated work: ~1 hour focused, all confined to `tests/` + a one-line
+pyproject tweak if needed.
+
+The user's exact ask was "yes please, 1 to 3, lets go" and then they
+paused immediately after, so no findings have shifted and no parser
+behaviour was changed since the previous commit `e9358dd`.
+
 ### Round 10 progress so far (samples 003..008 added 2026-05-11)
 
 - **Element block schemas (confirmed by record-count arithmetic):**
