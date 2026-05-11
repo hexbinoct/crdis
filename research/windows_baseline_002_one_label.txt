@@ -1,0 +1,15 @@
+file: samples\002_one_label\report.rpt  (16384 bytes)
+
+streams:
+  \x05SummaryInformation                   437 B  sha256:3036e0428735..  Standard MS Office property set (title, author, timestamps, etc).
+  Contents                                1633 B  sha256:454459322d53..  Report definition. Body is encrypted/scrambled in CRforVS 13.x — see research/format_notes.md.
+  CrystalReportDesignerStream              114 B  sha256:e84d97ac02c1..  Designer state. Static for many sample variants.
+  QESession                                 64 B  sha256:b90c42772028..  Per-save session GUID/salt. Random-looking; ignored.
+  ReportInfo                                58 B  sha256:462365f68ee2..  Report-level metadata. Static for many sample variants.
+
+summary properties:
+  last_saved_by           'ab'
+  revision_number         '10'
+  create_time             datetime.datetime(2026, 5, 8, 9, 50, 24, 456000)
+  last_saved_time         datetime.datetime(2026, 5, 8, 9, 55, 19, 84000)
+  creating_application    'Crystal Reports'

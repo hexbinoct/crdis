@@ -1,0 +1,39 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local exploration scratch
+scratch/
+*.scratch.*
+
+# Compiled Kaitai parsers (generated from spec/*.ksy)
+crdis/_generated/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SAP/Crystal runtime DLLs — local-only RE artifacts. Do NOT redistribute;
+# we keep them under research/ for clean-room interop analysis only.
+research/runtime_dlls/
+
+# Visual Studio build artifacts (we keep the sample-authoring VS project
+# under visualstudio_project_for_sample_rptFiles/ — sources only, no builds).
+**/bin/
+**/obj/
+**/.vs/
+*.suo
+*.csproj.user
+
+# Defensive: never ship a Crystal Decisions runtime DLL regardless of path.
+# These get copied into bin/Debug at build time.
+CrystalDecisions.*.dll
+

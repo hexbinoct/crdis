@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crdis"
+version = "0.0.1"
+description = "Clean-room parser for Crystal Reports .rpt files"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "kaitaistruct>=0.10",
+    "olefile>=0.46",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+crdis = "crdis.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["crdis*"]

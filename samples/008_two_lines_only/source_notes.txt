@@ -1,0 +1,27 @@
+﻿two.rpt:
+2 labels, first is 
+HELLO, h:221,w:1869,l:100,t:100
+second text : WORLD
+h:221,w:1869,l:2055,t:100
+three.rpt:
+same 2 labels with exact same dimensions and locations, only text on
+both has changed, first is GREETINGS and second label has text SOMEONE
+four.rpt:
+exact same labels as three.rpt, but one image has been added to Page
+Header section, image info: h:2371,w:2445,l:2128,t:76
+five.rpt:
+exact as four.rpt but image moved to details section of the right side
+of second label SOMEONE
+h:2371,w:2445,l:4028,t:76
+six.rpt:
+same as five.rpt with 2 labels and image in details.
+one line has been added, and its info:
+bottom:675,top:675,left:1125,right:5325
+seven.rpt:
+no labels, 2 lines, line 1:
+style : single, bottom:240,top240,left:1050,right:5550
+line 2:
+style : dotted, bottom:870,top:870,left:1710,right:5700
+
+
+
