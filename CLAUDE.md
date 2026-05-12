@@ -45,73 +45,45 @@ Then ask the user where they left off if it isn't obvious from RESUME HERE.
 3. Confirmed structure is encoded in `spec/*.ksy`.
 4. Reference parser exposes findings via `crdis` CLI / library.
 
-## RESUME HERE (2026-05-11 handoff — Round 10 in progress)
+## RESUME HERE (2026-05-12 handoff — Round 10 in progress)
 
 **TL;DR for the next Claude session.** The encryption is fully cracked.
 Sample set has grown from 2 → 8 reports (all parse byte-perfect). Three
 element classes have confirmed record-block schemas and several fields
-inside them are decoded. Next pass needs a new batch of Designer-authored
-samples (see "Next-pass sample requests" at the bottom of
-`research/format_notes.md`). Read this section, then Round 9 + Round 10
-sections of `research/format_notes.md`, then
+inside them are decoded. A regression test suite now locks all current
+findings (44 tests, all green as of commit `487f937`). Next pass needs a
+new batch of Designer-authored samples (see "Next-pass sample requests"
+at the bottom of `research/format_notes.md`). Read this section, then
+Round 9 + Round 10 sections of `research/format_notes.md`, then
 `research/reverse_engineering_journey.md` for narrative.
 
-### ⏸ PAUSED MID-TASK (2026-05-11, late session) — pick up here first
+### ✅ Test suite landed (2026-05-12, commit `487f937`)
 
-We paused while setting up a proper test suite. Plan was agreed and
-TaskCreate entries were filed in the session task list; the user wants
-all three of these (in order):
+Three test modules under `tests/` lock the current state. Run with
+`pytest -q tests/` from the repo root (requires `pip install -e '.[dev]'`).
 
-1. **Golden-fixture tests over all 8 samples.** Parameterized test that,
-   for each `samples/00*/report.rpt`, asserts:
-   - sha256 of the raw Contents stream
-   - sha256 of the inflated plaintext after `decrypt_contents_stream`
-   - top-level record count
-   - sha256 of the concatenation of every top-level `record.value`
-   The expected hashes are not stored as fixture files; bake them as
-   constants in the test module so a regression in either the AES port
-   or the CSArchive parser fails loudly. Compute the values once with
-   the current (known-good) parser to seed the constants.
-2. **Ground-truth decoder tests.** Convert prose in each sample's
-   `notes.md` into executable assertions:
-   - 002/003/004: extract every 0xC2 record's string and assert it
-     matches the Designer-authored content ("HELLO", "WORLD",
-     "GREETINGS", "SOMEONE"). 0xC2 layout =
-     `<u4 BE length><utf8+NUL><4 pad>`; length includes the NUL.
-   - 007/008: walk each Line block (top-level 0xAA → 0xA9 → 0x9E),
-     pull element name from 0x9E.value[20:], width from 0x9E.value[0:4]
-     (u4 BE), (left, top) from the next 0xBE record, (right, bottom)
-     from 0xA9.tail[2..6], style from 0xEC.value[2], thickness from
-     0xEC.value[18:22] (u4 BE). Assert exactly the values in notes.md
-     (note: sample 007's `right` decodes to 5565 but the notes say
-     5325 — the test should encode the file truth, and a separate
-     comment should flag the notes discrepancy).
-   - 001: assert no element-class records (no 0xA5, 0xAA, 0xAF) — the
-     "empty report has nothing" invariant.
-3. **AES non-FIPS test vector.** Hardcode a single
-   `(key, IV, ciphertext[:32]) -> expected_plaintext[:32]` triple
-   from sample 001. The expected plaintext must start with the zlib
-   magic `78 5e`. Computing the vector: take `body = read_stream(...,
-   "Contents")` of sample 001, derive `iv = body[16:32] XOR 0xff`,
-   `ct = body[34:66]`, run `cfb128_decrypt(expand_key(FIXED_KEY), iv,
-   ct)`, capture the first 32 plaintext bytes, lock them in. This
-   catches anyone accidentally swapping `crdis.codec.cslibu_aes` for
-   `Crypto.Cipher.AES` — exactly the regression the cslibu port
-   guards against.
+- **`tests/test_golden.py`** — parameterized over all 8 samples; asserts
+  sha256 of raw Contents stream, sha256 of inflated plaintext, top-level
+  record count, and sha256 of concatenated `record.value`. Hashes baked
+  as module constants seeded from the current parser. 32 assertions.
+- **`tests/test_decoders.py`** — ground truth from each sample's
+  `notes.md` as executable assertions:
+    - 001: no element-class records (0xA5 / 0xAA / 0xAF absent).
+    - 002/003/004: 0xC2 strings = HELLO / WORLD / GREETINGS / SOMEONE.
+    - 007/008: every Line block decodes to the notes-stated name, width,
+      left, top, right, bottom, style, thickness.
+  6 assertions.
+- **`tests/test_aes_vector.py`** — hardcoded `(key, IV, ct[:32]) ->
+  pt[:32]` triple derived from sample 001. Plaintext begins with zlib
+  magic `78 5e`. Catches anyone replacing `crdis.codec.cslibu_aes` with
+  stock PyCryptodome AES.
 
-The existing `tests/test_container.py` only covers samples 001 and 002.
-First step: extend its `SAMPLE_FILES` list to all 8 samples. Pytest is
-already a declared optional dev dep (`pip install -e '.[dev]'`); it just
-needs to actually be installed on this machine — last attempt's tool
-call got interrupted before I could verify.
+**Note:** the prior CLAUDE.md remark that sample 007's line `right`
+decodes to 5565 was stale — current parser decodes 5325, agreeing with
+notes. Tests encode 5325; the 007 notes discrepancy is resolved.
 
-When done, run `pytest -q tests/` from the repo root, commit + push.
-Estimated work: ~1 hour focused, all confined to `tests/` + a one-line
-pyproject tweak if needed.
-
-The user's exact ask was "yes please, 1 to 3, lets go" and then they
-paused immediately after, so no findings have shifted and no parser
-behaviour was changed since the previous commit `e9358dd`.
+The "next-pass sample requests" at the bottom of
+`research/format_notes.md` are unchanged — that's where to continue.
 
 ### Round 10 progress so far (samples 003..008 added 2026-05-11)
 
@@ -213,8 +185,6 @@ Implementation: `crdis/codec/cslibu_aes.py` (AES port) + `crdis/codec/cs_archive
      Text-Object geometry — currently unknown which of 0xA5/0xFD/0xED holds it).
    - Three single-Text-Object samples differing by bold / italic / size=14pt
      (decodes the property tail of font record 0x08).
-   - Re-measure sample 007's line `right` coordinate (file says 5565, notes
-     say 5325 — one of them is wrong).
 2. **Drop new samples into `samples/NNN_*/`** with `notes.md` per template.
 3. **Diff with `tools/diff_records.py`** against the closest existing
    sibling, append findings to `research/format_notes.md` as

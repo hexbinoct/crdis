@@ -962,3 +962,33 @@ description.
   surface in the diff output directly (no more manual XOR step).
 - `spec/elements/line.ksy` encodes the full Line block — see file for full
   typed layout including the `line_style` enum.
+
+### Round 10 (cont.) — 2026-05-12: regression test suite landed
+
+Status: **closed** (paused work from 2026-05-11 finished). Commit `487f937`.
+
+Three pytest modules under `tests/` now lock every Round 10 finding:
+
+- `tests/test_golden.py` — 8 samples × {raw Contents sha256, inflated
+  plaintext sha256, top-level record count, concatenated `record.value`
+  sha256}. Any drift in the AES port or the CSArchive parser flips at
+  least one of 32 assertions.
+- `tests/test_decoders.py` — encodes the ground truth from each sample's
+  `notes.md`: 001 has no element-class records; 002/003/004 0xC2 strings
+  match Designer text; 007/008 Lines decode to the stated name, width,
+  left/top from 0xBE, right/bottom from `0xA9.tail[2:4] / [4:6]`,
+  LineStyle from `0xEC.value[2]`, thickness from `0xEC.value[18:22]`.
+- `tests/test_aes_vector.py` — hardcoded `(KEY, IV, ct[:32]) -> pt[:32]`
+  derived from sample 001. Guards against accidental PyCryptodome
+  substitution for the cslibu byte-permuted AES.
+
+44/44 pass in ~0.04 s. Run with `pytest -q tests/` after
+`pip install -e '.[dev]'`.
+
+**Sample 007 `right` discrepancy — resolved.** The earlier session noted
+sample 007's line decoded to `right=5565` while notes said `5325`. With
+the current "one nested record + tail" parser, `0xA9.tail[2:4] = 14 cd
+= 5325`, exactly matching notes. The original `15 cd → 5565` reading
+was a one-byte-misaligned slice of the same region. No re-measurement
+needed; the previous "Re-measure sample 007" item in the next-pass list
+has been dropped.
