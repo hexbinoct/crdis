@@ -224,16 +224,21 @@ Implementation: `crdis/codec/cslibu_aes.py` (AES port) + `crdis/codec/cs_archive
 ### Round 10 plan — next pass
 
 1. **Author the requested next-pass samples** (in CR Designer on Windows).
-   Full list with rationale in the "Next-pass sample requests" section at
-   the bottom of `research/format_notes.md`. In priority order:
-   - One line each of style None / Double / Dashed (locks the remaining
-     three LineStyle enum values).
-   - Two single-style lines at different thicknesses (confirms the
-     thickness hypothesis at inner-0xEC offset 19, and gives units).
-   - One Text Object at a distinctive non-default width × height (decodes
-     Text-Object geometry — currently unknown which of 0xA5/0xFD/0xED holds it).
-   - Three single-Text-Object samples differing by bold / italic / size=14pt
-     (decodes the property tail of font record 0x08).
+   Updated 2026-05-13 to reflect what's already decoded. In priority order:
+   - **Line styles None / Double / Dashed** — one line each in a single
+     report. Locks the three remaining LineStyle enum values (single=1,
+     dotted=4 already confirmed via 008).
+   - **Text Object at non-default width × height** — e.g. Width=3000,
+     Height=500, text "HELLO". Geometry decoder already written (0x9E
+     [0:4] width / [4:8] height u4 BE twips, from 002/003/004) but only
+     1 distinct value tested. This upgrades it from "supported" to
+     "confirmed" — same role sample 009 played for thickness.
+   - **Three single-Text-Object samples** differing from 002 by exactly
+     one font property: 3a) bold; 3b) italic; 3c) size=14pt. Cracks the
+     17-byte tail of font record 0x08 (currently undecoded).
+   - **Freebie (optional):** one Image at a non-default size — resize
+     Picture1 to e.g. 1000×800 in Designer. Same role for image-geometry
+     as item 2 plays for text-object-geometry.
 2. **Drop new samples into `samples/NNN_*/`** with `notes.md` per template.
 3. **Diff with `tools/diff_records.py`** against the closest existing
    sibling, append findings to `research/format_notes.md` as
