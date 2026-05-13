@@ -45,7 +45,56 @@ Then ask the user where they left off if it isn't obvious from RESUME HERE.
 3. Confirmed structure is encoded in `spec/*.ksy`.
 4. Reference parser exposes findings via `crdis` CLI / library.
 
-## RESUME HERE (2026-05-12 handoff — Round 10 in progress)
+## RESUME HERE (2026-05-13 handoff — Round 10 in progress)
+
+### 2026-05-13 delta: Text Object + Image element blocks decoded
+
+In addition to the thickness work (below), both Text Object and Image
+element blocks are now decoded using existing samples 002/003/004 and
+005/006/007 respectively. **The 0x9E "element metadata" record uses one
+universal schema across all three element classes:**
+
+- `0x9E.value[0:4]`   u4 BE = **width**  (twips)
+- `0x9E.value[4:8]`   u4 BE = **height** (twips, 0 for Lines)
+- `0x9E.value[16:20]` u4 BE = name byte-length (incl NUL)
+- `0x9E.value[20:..]` UTF-8 name + NUL pad
+
+For all 5 text objects in 002/003/004: decoded `(1869, 221, "Text1"|"Text2")`
+matching Designer notes byte-for-byte. For all 3 image blocks: decoded
+`(2445, 2371, "Picture1")` matching Designer (notes say "Pic1" — that's
+a notes-side abbreviation; the file stores "Picture1"). Tests now at
+**55 passing** (was 49 → +3 text + +3 image block-decode tests).
+
+Image-block wrapper structure is `0xAF → 0xAE → 0x9E` (three levels,
+same depth as Lines' `0xAA → 0xA9 → 0x9E`); Text Object is
+`0xA5 → 0x9E` (two levels). All three element classes share identical
+default `0xFD`/`0xED` records — these hold a "shared default-property
+table" that varies only when the user changes border/alignment/style.
+
+Next-pass items #2 (Text Object distinctive size) and a new "Image at
+non-default size" would upgrade the two new decoders from "supported"
+to "confirmed" (multiple distinct values). Item #1 (line-style enum
+full coverage) and #3 (font property tail of 0x08) still need Designer.
+
+### 2026-05-13 delta: Line thickness fully confirmed (sample 009)
+
+New sample `009_five_lines_thickness` added — five single-style Lines at
+1.0 / 1.5 / 2.0 / 2.5 / 3.0 pt. Thickness encoding is now locked across
+5 distinct values:
+
+- **Thickness field:** inner-0xEC `value[18:22]`, **u4 BE, units = twips**
+  (1 pt = 20 twips). Decodes 20 / 30 / 40 / 50 / 60 for 1.0/1.5/2.0/2.5/3.0 pt.
+- Sample 008's dotted Line2 has thickness = 0, suggesting Designer
+  stores 0 as a "use renderer default" sentinel for non-single styles.
+- LineStyle is at `0xEC.value[2]` (BE u16 `0x0100` = single, `0x0400` =
+  dotted); the earlier "offset 0 = LineStyle" note below is stale —
+  trust `tests/test_decoders.py` and `spec/elements/line.ksy`.
+- Test suite now at 49 passing (was 44). New asserts: 4 golden hashes
+  for 009 + 1 line-block decode (5 Lines).
+- Next-pass item #2 ("Line thickness independent of style") is **done**;
+  remaining items 1 / 3 / 4 in `research/format_notes.md` are unchanged.
+
+
 
 **TL;DR for the next Claude session.** The encryption is fully cracked.
 Sample set has grown from 2 → 8 reports (all parse byte-perfect). Three

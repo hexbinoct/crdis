@@ -21,6 +21,10 @@ crdis/_generated/
 .DS_Store
 Thumbs.db
 
+# User's office reports — not for redistribution. Kept locally only as a
+# stash of additional .rpt files the user may draw on for future samples.
+samples/more_reports/project_rpt/
+
 # SAP/Crystal runtime DLLs — local-only RE artifacts. Do NOT redistribute;
 # we keep them under research/ for clean-room interop analysis only.
 research/runtime_dlls/

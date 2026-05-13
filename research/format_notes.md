@@ -867,9 +867,9 @@ paired samples should isolate, one variable at a time:
 1. **Line-style enum, full coverage.** One report containing one line each
    of styles None / Double / Dashed (the three not yet observed); the
    single / dotted endpoints are already confirmed.
-2. **Line thickness independent of style.** Two single-style lines, one at
-   1pt, one at 2pt (or any two distinct thicknesses). Confirms the offset-19
-   hypothesis and gives the units (twips? half-points?).
+2. ~~**Line thickness independent of style.**~~ **Done 2026-05-13** in
+   sample `009_five_lines_thickness` — 5/5 thicknesses decode as
+   `0xEC.value[18:22]` u4 BE in twips (1pt = 20 twips).
 3. **Text Object width/height.** One sample with a single Text Object at a
    distinctive width (e.g. 3000 twips wide × 500 tall) so the four bytes
    `0x0B B8 0x01 F4` are easy to spot in 0xA5 / 0xFD / 0xED candidates.
@@ -992,3 +992,193 @@ the current "one nested record + tail" parser, `0xA9.tail[2:4] = 14 cd
 was a one-byte-misaligned slice of the same region. No re-measurement
 needed; the previous "Re-measure sample 007" item in the next-pass list
 has been dropped.
+
+### Round 10 (cont.) — 2026-05-13: Line thickness encoding confirmed
+
+**Sample:** `009_five_lines_thickness` — five single-style Lines, varying
+only by thickness (1.0 / 1.5 / 2.0 / 2.5 / 3.0 pt per Designer).
+
+Status: **confirmed** (5/5 distinct values, perfectly linear).
+
+The inner-0xEC `[18:22]` u4 BE field — previously inferred as "thickness"
+from sample 008's lone 1pt line — now decodes across five distinct
+non-default values:
+
+| Designer name | Designer thickness (pt) | 0xEC.value[18:22] u4 BE | decoded twips |
+|---|---|---|---|
+| Line1 | 1.0 | `00 00 00 14` | 20 |
+| Line2 | 1.5 | `00 00 00 1e` | 30 |
+| Line4 | 2.0 | `00 00 00 28` | 40 |
+| Line6 | 2.5 | `00 00 00 32` | 50 |
+| Line8 | 3.0 | `00 00 00 3c` | 60 |
+
+Decoded value = `Designer_pt × 20`. **Units = twips** (1pt = 20 twips,
+matching the universal twip convention already used by 0xBE and the
+endpoint tail). The encoding handles half-point increments naturally —
+no need for a separate "tenths-of-points" or fixed-point scheme.
+
+Cross-check with sample 008: Line#1 (single-style, default thickness)
+decodes to 20 twips = 1pt, the Designer default. Line#2 (dotted-style,
+"default" in Designer's picker) decodes to `00 00 00 00` = 0 twips —
+i.e. for non-single styles Designer stores **0** rather than the
+nominal-default 20. Probably a "use renderer default for this style"
+sentinel; not worth a sample of its own until a non-1pt dotted line is
+authored.
+
+**Geometry of all five lines also matches Designer reports byte-for-byte**
+(left/top from 0xBE, right/bottom from 0xA9.tail[2:6]) — these are now
+8 + 8 = 16 fully-decoded endpoint quadruples across samples 007/008/009.
+Updates the "Line thickness independent of style" item in the next-pass
+list — dropping it.
+
+**Element names in sample 009:** `0x9E.value[20:30]` decodes to
+`Line1\0` / `Line2\0` / `Line4\0` / `Line6\0` / `Line8\0`, exactly the
+names Designer reports. Width field `0x9E.value[0:4]` matches
+`(right - left)` for every line. No new findings here — sample 008's
+schema generalises cleanly to N lines.
+
+**No new schema bytes uncovered.** All 34 bytes of every line's 0xEC
+value are accounted for as `[0:2]=0000`, `[2:4]=line_style (0100=single)`,
+`[4:14]=0×10`, `[14:18]=ffffffff`, `[18:22]=thickness twips`,
+`[22:34]=01 00 00 02 00 00 00 00 00 00 00 00` (constant tail). Encoded
+in `spec/elements/line.ksy` already; no spec change needed.
+
+### Round 10 (cont.) — 2026-05-13b: Text Object geometry decoded
+
+**Samples used:** 002, 003, 004 (5 text objects, all Arial 10pt regular,
+all width=1869, height=221 per Designer; positions vary).
+
+Status: **supported** (4 of 5 text objects geometry-identical — only
+1 distinct (width, height) value in our corpus; sample 3 on the
+"next-pass" list will upgrade to confirmed by giving a non-default size).
+
+**0x9E geometry generalises across Line and Text Object:**
+
+| offset | type   | meaning                |
+|--------|--------|------------------------|
+| 0:4    | u4 BE  | width (twips)          |
+| 4:8    | u4 BE  | height (twips)         |
+| 8:16   | 8 B    | zeros (reserved)       |
+| 16:20  | u4 BE  | name byte-length (incl NUL) |
+| 20:..  | bytes  | UTF-8 name + NUL pad   |
+
+Lines store height=0 (1D primitive); Text Objects store the real value.
+All 5 text objects in 002/003/004 decode to `(1869, 221)` exactly,
+matching Designer's reported width × height. Element names decode to
+"Text1" / "Text2" exactly.
+
+**0xBE offsets unchanged from Lines:** `(left u2 BE, top u2 BE)`.
+HELLO/GREETINGS at (100, 100); WORLD/SOMEONE at (2055, 100). All four
+match Designer notes byte-for-byte.
+
+**0xC2 (string)** schema also unchanged: `<u4 BE byte-length> <utf-8
+including NUL> <4 zero pad>`. Already locked in prior tests.
+
+**Within-sample diff (sample 003: HELLO vs WORLD; sample 004:
+GREETINGS vs SOMEONE):** only `0xA5` (via its inner `0x9E`, for the
+name+geometry), `0xBE` (left), and `0xC2` (string) differ. Every other
+record in the 12-record block is byte-identical between the two
+text objects:
+
+  - `0xFD` (165 B): identical across all 5 text objects, and **identical
+    to a default Line's 0xFD**.
+  - `0xED` (130 B): same — identical to default Line. Inner `0xEC` has
+    `value[18:22] = 0x14 = 20` i.e. 1pt — text objects carry a default
+    "stroke" property they probably ignore unless a border is enabled.
+  - `0xC0` (23 B): constant `00 00 00 00 00 00 00 00 00 00 00 00 01 00
+    00 00 01 00 00 01 00 00 00` — looks like a flag/format bitfield with
+    all defaults; needs samples varying border / alignment / fill to
+    crack.
+  - `0x0101` (60 B, wraps `0x0100` with 4-byte zero value + 48-byte
+    `00 00 00 01 00 00 ff ff` tail × 6): identical across all 5.
+  - `0x08` (font binding, 27 B): identical across all 5 — all Arial 10pt
+    regular. Layout: `<u4 BE namelen=6> "Arial\0" <17 bytes>`. The 17
+    bytes contain `00 0a` (= 10pt at offset 14:16) and what look like
+    weight / color / size slots; can't disentangle without bold / italic
+    / size=14pt samples (next-pass item #3).
+  - `0x0102 / 0xC3 / 0xC1 / 0xA6`: all empty (length 0). Probably
+    placeholders for optional sub-elements (conditional formatting,
+    hyperlinks, formulas).
+
+**0xA5 wrapper tail:** 16-byte constant `00 00 00 00 00 00 00 00 00 01
+00 00 00 00 00 00` for every text object (cf. Lines' 0xAA tail = 2-byte
+constant `00 01`). Probably a fixed-format element-class signature.
+
+**Cross-sample diff 003 vs 004 (geometry held; strings vary):** only
+the 0xC2 records differ. Locks "0xC2 is the sole string-carrying record
+in a Text Object block" — names live in 0x9E (different tag), not 0xC2.
+
+**Spec status:** schema is encodable now as `spec/elements/text_object.ksy`
+with the same structure as `line.ksy` — width/height/name in 0x9E,
+left/top in 0xBE, string in 0xC2. Holding off on writing the .ksy file
+until next-pass sample #2 (non-default Text-Object width × height)
+confirms the geometry across distinct values, same way sample 009 did
+for thickness.
+
+### Round 10 (cont.) — 2026-05-13c: Image element block decoded
+
+**Samples used:** 005, 006, 007 (all carry the same `Picture1` image at
+width=2445, height=2371, top=76; samples 005 vs 006 already known
+byte-identical inside the image block — section-binding is positional).
+
+Status: **supported** (3 samples, 1 distinct (width, height) value;
+upgrading to confirmed needs a sample with a differently-sized image).
+
+**Wrapper structure (three levels, same depth as Lines):**
+
+```
+0xAF (95 B value)
+  └─ 0xAE (83 B value)              — image-element container
+       └─ 0x9E (71 B value)         — element metadata (universal schema)
+       └─ tail (4 B, constant `00 00 00 00`)
+  └─ (no outer tail beyond the 0xAE)
+```
+
+The 0xAE wrapper plays the same structural role as 0xA9 (Lines) and the
+direct-0x9E nesting (Text Objects' 0xA5 → 0x9E with no intermediate
+wrapper). The "universal" 0x9E schema continues to hold:
+
+| 0x9E.value offset | type | meaning |
+|---|---|---|
+| 0:4   | u4 BE | width  (twips) |
+| 4:8   | u4 BE | height (twips) |
+| 8:16  | 8 B   | reserved zeros |
+| 16:20 | u4 BE | name byte-length (incl NUL) |
+| 20:.. | bytes | UTF-8 name + NUL pad |
+
+For sample 005/006/007: decoded `(2445, 2371, "Picture1\0")` exactly.
+
+**0xBE offsets unchanged:** `(left u2 BE, top u2 BE)` = (2128, 76) /
+(4028, 76) / (4028, 76). All three match Designer notes.
+
+**Notes-vs-file discrepancy (cosmetic):** all three sample notes call
+the image "Pic1"; the file stores Designer's auto-assigned name
+"Picture1". Notes-side abbreviation, not a decoder error. Tests assert
+the file value.
+
+**Cross-sample diff 005 vs 006 (image moves from Page Header to
+Details, only `left` changes 2128 → 4028):** the image block itself is
+byte-identical except for `0xBE.value[0:2]`. Confirms (again) that
+section binding is positional — no record inside the block names a
+section.
+
+**Records 0x09 (32 B) and 0xBD (12 B):** byte-identical across all
+3 image samples. Hold image-render defaults (DPI? aspect mode? sizing
+policy?) that don't vary in our corpus. The 0x09 value contains two
+`00 00 03 e8` (= 1000 each) and otherwise zeros — looks like a
+fixed-point ratio pair, possibly default scale-x / scale-y. Decode
+pending a sample with a non-default image-sizing mode (or a different
+image).
+
+**0xFD (165 B) and 0xED (130 B):** byte-identical to the default
+versions seen in Lines and Text Objects. Reinforces the "shared
+default-property table" hypothesis: every element kind ships these
+two records with the same defaults until a property is changed.
+
+**Element-name universality.** The 0x9E layout works without
+modification for all three element classes we have decoded (Lines,
+Text Objects, Images) — strong evidence it is the canonical
+"element metadata" record across the entire format.
+
+
+

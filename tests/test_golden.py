@@ -1,4 +1,4 @@
-"""Golden-fixture tests for all 8 paired samples.
+"""Golden-fixture tests for all 9 paired samples.
 
 For each `samples/00*/report.rpt`, assert four hashes/counts:
   - sha256 of the raw `Contents` stream bytes
@@ -59,6 +59,10 @@ GOLDEN = [
      1604, "f7f61c5c5e0c499fff2b3f388bb1dc169d8457efb006e62d303b80502602771d",
      6021, "d6ea536570c1ff0269dbccd3821addf2b9e44f4aff02d3bea9238515c075f0c4",
      136,  "50b36802456ba69b3ed75bd99d7361979b7ebc07e988e63079de37973e07b236"),
+    ("009_five_lines_thickness",
+     1676, "93d219fef7db7a7efe4708e3ead4977c86c55e0fa9aa3b8020c940218eb75049",
+     7308, "1c71ae5f77b4c2c6c37d0563748ee87a37b2134a47469a2a288ea992818a30e1",
+     151,  "089da0e1346b95458412483380f0e34efdc923381488357d9843b2f97db72309"),
 ]
 
 

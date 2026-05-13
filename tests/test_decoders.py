@@ -75,6 +75,136 @@ def test_text_object_strings(sample: str, expected: list[str]):
     assert strings == expected
 
 
+# -------- 002/003/004: Text Object geometry (width + height + name + left + top) --------
+
+# Text Object block: [0xA5, 0xBE, 0xFD, 0xED, 0xC0, 0xC2, 0x101, 0x08, 0x102, 0xC3, 0xC1, 0xA6]
+# Schema (decoded 2026-05-13):
+#   0xA5 -> 0x9E.value[0:4]   u4 BE = width  (twips)
+#           0x9E.value[4:8]   u4 BE = height (twips)
+#           0x9E.value[19]    u1    = name length (counts NUL; same as Line)
+#           0x9E.value[20:..] UTF-8 + NUL
+#   0xBE.value[0:2] u2 BE = left  (twips)
+#   0xBE.value[2:4] u2 BE = top   (twips)
+#   0xC2.value     length-prefixed UTF-8 + NUL + 4-byte zero pad
+
+TEXT_BLOCK_TAGS = [0xA5, 0xBE, 0xFD, 0xED, 0xC0, 0xC2, 0x101, 0x08, 0x102, 0xC3, 0xC1, 0xA6]
+
+
+class TextExpect(NamedTuple):
+    name: str
+    width: int
+    height: int
+    left: int
+    top: int
+    text: str
+
+
+SAMPLE_TEXT_OBJECTS: dict[str, list[TextExpect]] = {
+    "002_one_label": [
+        TextExpect("Text1", 1869, 221, 100, 100, "HELLO"),
+    ],
+    "003_two_labels_hello_world": [
+        TextExpect("Text1", 1869, 221, 100, 100, "HELLO"),
+        TextExpect("Text2", 1869, 221, 2055, 100, "WORLD"),
+    ],
+    "004_two_labels_greetings_someone": [
+        TextExpect("Text1", 1869, 221, 100, 100, "GREETINGS"),
+        TextExpect("Text2", 1869, 221, 2055, 100, "SOMEONE"),
+    ],
+}
+
+
+def _decode_text_objects(records: list[Record]) -> list[TextExpect]:
+    out = []
+    L = len(TEXT_BLOCK_TAGS)
+    for i in range(len(records) - L + 1):
+        if [records[i + k].tag for k in range(L)] != TEXT_BLOCK_TAGS:
+            continue
+        a5, be, _, _, _, c2, *_ = records[i:i + L]
+        nine_e = a5.children[0]
+        v = nine_e.value
+        width = int.from_bytes(v[0:4], "big")
+        height = int.from_bytes(v[4:8], "big")
+        nlen = v[19]
+        name = v[20:20 + nlen].rstrip(b"\x00").decode("utf-8")
+        left = int.from_bytes(be.value[0:2], "big")
+        top = int.from_bytes(be.value[2:4], "big")
+        text = _extract_c2_string(c2)
+        out.append(TextExpect(name, width, height, left, top, text))
+    return out
+
+
+@pytest.mark.parametrize("sample", list(SAMPLE_TEXT_OBJECTS))
+def test_text_object_block_fields(sample: str):
+    recs = _parse(sample, recurse=True)
+    decoded = _decode_text_objects(recs)
+    assert decoded == SAMPLE_TEXT_OBJECTS[sample]
+
+
+# -------- 005/006/007: Image geometry (width + height + name + left + top) --------
+
+# Image block: [0xAF, 0xBE, 0xFD, 0xED, 0x09, 0xBD, 0xB0]
+# 0xAF wraps 0xAE wraps 0x9E (three-level nesting, same depth as Lines).
+# 0x9E uses the universal schema: [0:4]=width, [4:8]=height,
+# [16:20]=name_length (u4 BE), [20:..]=name+NUL.
+#
+# Note: the file decodes the image name as "Picture1" (Designer's auto-name).
+# Sample notes.md files say "Pic1" — that's a notes-side abbreviation;
+# the file is authoritative. Tests assert "Picture1".
+
+IMAGE_BLOCK_TAGS = [0xAF, 0xBE, 0xFD, 0xED, 0x09, 0xBD, 0xB0]
+
+
+class ImageExpect(NamedTuple):
+    name: str
+    width: int
+    height: int
+    left: int
+    top: int
+
+
+SAMPLE_IMAGES: dict[str, list[ImageExpect]] = {
+    "005_image_in_page_header": [
+        ImageExpect("Picture1", 2445, 2371, 2128, 76),
+    ],
+    "006_image_in_details": [
+        ImageExpect("Picture1", 2445, 2371, 4028, 76),
+    ],
+    "007_image_and_line": [
+        ImageExpect("Picture1", 2445, 2371, 4028, 76),
+    ],
+}
+
+
+def _decode_images(records: list[Record]) -> list[ImageExpect]:
+    out = []
+    L = len(IMAGE_BLOCK_TAGS)
+    for i in range(len(records) - L + 1):
+        if [records[i + k].tag for k in range(L)] != IMAGE_BLOCK_TAGS:
+            continue
+        af, be, *_ = records[i:i + L]
+        # 0xAF -> 0xAE -> 0x9E (parser recurses one level by default;
+        # re-parse 0xAE.value to get the 0x9E child).
+        ae = af.children[0]
+        nine_e_list = CSArchiveParser(ae.value).parse_all(recurse=False)
+        v = nine_e_list[0].value
+        width = int.from_bytes(v[0:4], "big")
+        height = int.from_bytes(v[4:8], "big")
+        nlen = v[19]
+        name = v[20:20 + nlen].rstrip(b"\x00").decode("utf-8")
+        left = int.from_bytes(be.value[0:2], "big")
+        top = int.from_bytes(be.value[2:4], "big")
+        out.append(ImageExpect(name, width, height, left, top))
+    return out
+
+
+@pytest.mark.parametrize("sample", list(SAMPLE_IMAGES))
+def test_image_block_fields(sample: str):
+    recs = _parse(sample, recurse=True)
+    decoded = _decode_images(recs)
+    assert decoded == SAMPLE_IMAGES[sample]
+
+
 # -------- 007/008: Line geometry / style / thickness --------
 
 
@@ -102,6 +232,21 @@ SAMPLE_LINES: dict[str, list[LineExpect]] = {
                    right=5550, bottom=240, style=1, thickness=20),
         LineExpect(name="Line2", width=3990, left=1710, top=870,
                    right=5700, bottom=870, style=4, thickness=0),
+    ],
+    # Sample 009: five single-style lines, varying only by thickness.
+    # 1.0 / 1.5 / 2.0 / 2.5 / 3.0 pt -> 20 / 30 / 40 / 50 / 60 twips.
+    # Decoded values lock the thickness encoding (u4 BE, twips, 1pt=20).
+    "009_five_lines_thickness": [
+        LineExpect(name="Line1", width=5610, left=1920, top=690,
+                   right=7530, bottom=690, style=1, thickness=20),
+        LineExpect(name="Line2", width=4590, left=1950, top=1800,
+                   right=6540, bottom=1800, style=1, thickness=30),
+        LineExpect(name="Line4", width=4665, left=2400, top=2790,
+                   right=7065, bottom=2790, style=1, thickness=40),
+        LineExpect(name="Line6", width=4125, left=2025, top=3555,
+                   right=6150, bottom=3555, style=1, thickness=50),
+        LineExpect(name="Line8", width=4020, left=3585, top=4245,
+                   right=7605, bottom=4245, style=1, thickness=60),
     ],
 }
 
